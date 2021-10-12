@@ -20,11 +20,6 @@ const (
 	_STAMP_STYLE = "15:04:05.000"
 )
 
-type FileStatus struct {
-	ModTime time.Time
-	Size    int64
-}
-
 var (
 	flagRoot  = flag.String("target", "", "Set the target `directory`")
 	flagOnAdd = flag.String("add", "", "execute `commandline`({} is replaced to the path) on new file found")
@@ -48,13 +43,26 @@ func eventAction(cmdline, filename string) {
 	system(cmdline)
 }
 
+func filesEqual(left, right fs.FileInfo) bool {
+	var size1 int64 = 0
+	var time1 time.Time
+	if left != nil && !left.IsDir() {
+		size1 = left.Size()
+		time1 = left.ModTime()
+	}
+	var size2 int64
+	var time2 time.Time
+	if right != nil && !right.IsDir() {
+		size2 = right.Size()
+		time2 = right.ModTime()
+	}
+	return size1 == size2 && time1 == time2
+}
+
 func watch(rootPath string, out io.Writer) error {
-	previous := make(map[string]FileStatus)
+	previous := make(map[string]fs.FileInfo)
 	filepath.Walk(rootPath, func(path string, info fs.FileInfo, err error) error {
-		previous[path] = FileStatus{
-			ModTime: info.ModTime(),
-			Size:    info.Size(),
-		}
+		previous[path] = info
 		return nil
 	})
 
@@ -72,7 +80,7 @@ func watch(rootPath string, out io.Writer) error {
 			if !ok {
 				return errors.New("Closed timer")
 			}
-			current := make(map[string]FileStatus)
+			current := make(map[string]fs.FileInfo)
 			stamp := next.Format(_STAMP_STYLE)
 
 			filepath.Walk(rootPath, func(path string, info fs.FileInfo, err error) error {
@@ -81,8 +89,9 @@ func watch(rootPath string, out io.Writer) error {
 					relPath = path
 				}
 				if pre, ok := previous[path]; ok {
-					if info != nil && !info.IsDir() && (pre.Size != info.Size() || pre.ModTime != info.ModTime()) {
+					if !filesEqual(pre, info) {
 						if *flagOnUpd != "" {
+
 							eventAction(*flagOnUpd, path)
 						}
 						fmt.Fprintf(out, "\x1B[33;1m%s Upd %s\x1B[0m\n", stamp, relPath)
@@ -94,14 +103,7 @@ func watch(rootPath string, out io.Writer) error {
 						eventAction(*flagOnAdd, path)
 					}
 				}
-				if info != nil {
-					current[path] = FileStatus{
-						ModTime: info.ModTime(),
-						Size:    info.Size(),
-					}
-				} else {
-					current[path] = FileStatus{}
-				}
+				current[path] = info
 				return nil
 			})
 			for path := range previous {
