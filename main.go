@@ -7,8 +7,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mattn/go-colorable"
@@ -23,7 +25,28 @@ type FileStatus struct {
 	Size    int64
 }
 
-var flagRoot = flag.String("target", "", "Set the target directory")
+var (
+	flagRoot  = flag.String("target", "", "Set the target `directory`")
+	flagOnAdd = flag.String("add", "", "execute `commandline`({} is replaced to the path) on new file found")
+	flagOnUpd = flag.String("upd", "", "execute `commandline({} is replaced to the path)` on file updated")
+	flagOnDel = flag.String("del", "", "execute `commandline({} is replaced to the path)` on file deleted")
+)
+
+func system(cmdline string) func() {
+	os.Setenv("CMDLINE", cmdline)
+	cmd := exec.Command("cmd.exe", "/S", "/C", "%CMDLINE%")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Start()
+	return func() { cmd.Wait() }
+}
+
+func eventAction(cmdline, filename string) {
+	cmdline = strings.ReplaceAll(cmdline, `{}`, `"`+filename+`"`)
+	fmt.Println(cmdline)
+	system(cmdline)
+}
 
 func watch(rootPath string, out io.Writer) error {
 	previous := make(map[string]FileStatus)
@@ -45,8 +68,8 @@ func watch(rootPath string, out io.Writer) error {
 	fmt.Fprintf(out, "\x1B[37;1mWatch Start: %s\x1B[0m\n", rootPath)
 	for {
 		select {
-		case next,ok := <-ticker.C:
-			if ! ok {
+		case next, ok := <-ticker.C:
+			if !ok {
 				return errors.New("Closed timer")
 			}
 			current := make(map[string]FileStatus)
@@ -59,11 +82,17 @@ func watch(rootPath string, out io.Writer) error {
 				}
 				if pre, ok := previous[path]; ok {
 					if info != nil && !info.IsDir() && (pre.Size != info.Size() || pre.ModTime != info.ModTime()) {
+						if *flagOnUpd != "" {
+							eventAction(*flagOnUpd, path)
+						}
 						fmt.Fprintf(out, "\x1B[33;1m%s Upd %s\x1B[0m\n", stamp, relPath)
 					}
 					delete(previous, path)
 				} else {
 					fmt.Fprintf(out, "\x1B[32;1m%s Add %s\x1B[0m\n", stamp, relPath)
+					if *flagOnAdd != "" {
+						eventAction(*flagOnAdd, path)
+					}
 				}
 				if info != nil {
 					current[path] = FileStatus{
@@ -81,6 +110,9 @@ func watch(rootPath string, out io.Writer) error {
 					relPath = path
 				}
 				fmt.Fprintf(out, "\x1B[31;1m%s Del %s\x1B[0m\n", stamp, relPath)
+				if *flagOnDel != "" {
+					eventAction(*flagOnDel, path)
+				}
 			}
 			previous = current
 		case <-ctrlc:
