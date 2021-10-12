@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,6 +21,8 @@ type FileStatus struct {
 	ModTime time.Time
 	Size    int64
 }
+
+var flagRoot = flag.String("target", "", "Set the target directory")
 
 func watch(rootPath string, out io.Writer) error {
 	previous := make(map[string]FileStatus)
@@ -87,10 +90,15 @@ func mains() error {
 	if dispose := colorable.EnableColorsStdout(nil); dispose != nil {
 		defer dispose()
 	}
-	return watch(os.TempDir(), colorable.NewColorableStdout())
+	target := *flagRoot
+	if target == "" {
+		target = os.TempDir()
+	}
+	return watch(target, colorable.NewColorableStdout())
 }
 
 func main() {
+	flag.Parse()
 	if err := mains(); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
