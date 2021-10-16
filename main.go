@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -27,20 +26,10 @@ var (
 	flagOnDel = flag.String("del", "", "execute `commandline({} is replaced to the path)` on file deleted")
 )
 
-func system(cmdline string) func() {
-	os.Setenv("CMDLINE", cmdline)
-	cmd := exec.Command("cmd.exe", "/S", "/C", "%CMDLINE%")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Start()
-	return func() { cmd.Wait() }
-}
-
 func eventAction(cmdline, filename string) {
 	cmdline = strings.ReplaceAll(cmdline, `{}`, `"`+filename+`"`)
 	fmt.Println(cmdline)
-	system(cmdline)
+	System(cmdline)
 }
 
 func filesEqual(left, right fs.FileInfo) bool {
