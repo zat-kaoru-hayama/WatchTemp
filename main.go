@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -65,10 +64,7 @@ func watch(rootPath string, out io.Writer) error {
 	fmt.Fprintf(out, "\x1B[37;1mWatch Start: %s\x1B[0m\n", rootPath)
 	for {
 		select {
-		case next, ok := <-ticker.C:
-			if !ok {
-				return errors.New("Closed timer")
-			}
+		case next := <-ticker.C:
 			current := make(map[string]fs.FileInfo)
 			stamp := next.Format(_STAMP_STYLE)
 
